@@ -1,59 +1,83 @@
-import os
 import streamlit as st
-import time
-from agent import run_agent
+import os
+from agent import agent_app
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from lms_tools import BrowserManager
+from dotenv import load_dotenv
 
-st.set_page_config(page_title="Agentic LMS Coordinator", page_icon="🤖")
+load_dotenv()
+
+st.set_page_config(page_title="Agentic LMS Coordinator", page_icon="🤖", layout="wide")
 
 st.title("🤖 Agentic LMS Coordinator")
-st.markdown("""
-This agent automates the LMS Module Rerun and Scheduling process.
-It interprets cohort codes, extracts data from master files, and syncs schedules.
-""")
 
-cohort_code = st.text_input("Enter Target Cohort Code", placeholder="e.g. PDDM-APM-0226-08Jun2026A")
+# Initialize chat history and agent state
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "agent_state" not in st.session_state:
+    st.session_state.agent_state = {"messages": [], "logs": []}
 
-if st.button("🚀 Start Process"):
-    if not cohort_code:
-        st.error("Please enter a valid cohort code.")
-    else:
-        st.info(f"Starting process for {cohort_code}...")
+# Sidebar for configuration
+with st.sidebar:
+    st.header("Settings")
+    if st.button("🗑️ Clear Chat"):
+        st.session_state.messages = []
+        st.session_state.agent_state = {"messages": [], "logs": []}
+        st.rerun()
 
-        log_container = st.empty()
-        status_container = st.empty()
+    if st.button("🛑 Quit Browser"):
+        BrowserManager.quit_driver()
+        st.success("Browser closed.")
 
-        thinking_stream = []
+    st.divider()
+    st.write(f"**LMS**: {os.getenv('LMS_URL')}")
+    st.write(f"**User**: {os.getenv('LMS_USER')}")
 
-        try:
-            for event in run_agent(cohort_code):
-                # Format the thinking stream
+# Display chat history
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# Chat input
+if prompt := st.chat_input("Ask me to start a cohort or answer my questions..."):
+    # Add user message to history
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # Prepare input for agent
+    current_messages = st.session_state.agent_state.get("messages", [])
+    current_messages.append(HumanMessage(content=prompt))
+
+    inputs = {
+        "messages": current_messages,
+        "target_cohort_code": st.session_state.get("target_cohort_code", ""),
+        "logs": st.session_state.agent_state.get("logs", [])
+    }
+
+    # Run agent and stream response
+    with st.chat_message("assistant"):
+        response_placeholder = st.empty()
+        full_response = ""
+
+        # We use st.status to show background tool work
+        with st.status("Agent is thinking...", expanded=False) as status:
+            for event in agent_app.stream(inputs, config={"configurable": {"thread_id": "1"}}):
                 if "agent" in event:
                     msg = event["agent"]["messages"][-1]
                     if msg.content:
-                        thinking_stream.append(f"**Agent**: {msg.content}")
+                        full_response += msg.content
+                        response_placeholder.markdown(full_response)
                     if msg.tool_calls:
                         for tc in msg.tool_calls:
-                            thinking_stream.append(f"🔧 **Tool Call**: {tc['name']}({tc['args']})")
+                            st.write(f"🔧 **Calling Tool**: `{tc['name']}`")
                 elif "tools" in event:
                     for msg in event["tools"]["messages"]:
-                        thinking_stream.append(f"✅ **Tool Output**: {msg.content[:500]}...")
+                        # tool_name = msg.name
+                        st.write(f"✅ **Tool Result**: {msg.content[:200]}...")
 
-                # Update UI
-                log_container.markdown("\n\n".join(thinking_stream))
-                status_container.status("Processing milestone...")
+            status.update(label="Milestone processed!", state="complete")
 
-            st.success("Milestone sequence complete!")
-        except Exception as e:
-            st.error(f"An error occurred: {str(e)}")
-        finally:
-            # BrowserManager.quit_driver() # Keep it open for prototype view if needed
-            pass
-
-if st.sidebar.button("Quit Browser"):
-    BrowserManager.quit_driver()
-    st.sidebar.write("Browser session terminated.")
-
-st.sidebar.header("Configuration")
-st.sidebar.write(f"LMS URL: {os.getenv('LMS_URL', 'https://apps.claaslms.educlaas.com/authoring/home')}")
-st.sidebar.write(f"Headless Mode: {st.sidebar.toggle('Headless', value=False, key='headless_toggle')}")
+        # Save agent's final message to state
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
+        st.session_state.agent_state["messages"].append(AIMessage(content=full_response))

@@ -1,7 +1,8 @@
-langgraph
+﻿langgraph
 langchain
 langchain-openai
 langchain-google-genai
+langchain-huggingface
 streamlit
 selenium
 webdriver-manager
