@@ -1,0 +1,11 @@
+langgraph
+langchain
+langchain-openai
+langchain-google-genai
+streamlit
+selenium
+webdriver-manager
+pandas
+openpyxl
+python-dotenv
+pydantic

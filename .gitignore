@@ -1,0 +1,28 @@
+# Environment variables
+.env
+
+# Virtual environment
+venv/
+ENV/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Streamlit
+.streamlit/
+
+# Diagnostic scripts
+check_encoding.py
+fix_encodings.py
+check_utf8.py
+clean_nulls.py
+verify_final.py
+fix_env.py
+final_fix.py
+
+# Data / Temp
+*.log
+.DS_Store
